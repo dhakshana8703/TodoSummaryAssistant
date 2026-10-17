@@ -49,8 +49,27 @@ jobs:
       image-base: ${{ steps.image.outputs.base }}
       backend-tags: ${{ steps.tags.outputs.backend }}
       frontend-tags: ${{ steps.tags.outputs.frontend }}
+      aws-configured: ${{ steps.aws-config.outputs.configured }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check AWS deployment configuration
+        id: aws-config
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          APP_SECRET_ARN: ${{ secrets.APP_SECRET_ARN }}
+        run: |
+          if [ -n "$AWS_REGION" ] && [ -n "$ECR_REGISTRY" ] && \
+             [ -n "$ECR_REPOSITORY" ] && [ -n "$AWS_DEPLOY_ROLE_ARN" ] && \
+             [ -n "$EC2_INSTANCE_ID" ] && [ -n "$APP_SECRET_ARN" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AWS settings are incomplete; Docker images will be built but not published or deployed."
+          fi
       - name: Set image name
         id: image
         env:
@@ -81,28 +100,28 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
       - uses: aws-actions/configure-aws-credentials@v4
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: steps.aws-config.outputs.configured == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
       - uses: aws-actions/amazon-ecr-login@v2
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: steps.aws-config.outputs.configured == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
       - name: Build and publish backend image
         uses: docker/build-push-action@v6
         with:
           context: Backend/todo-summary-assistant
-          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          push: ${{ steps.aws-config.outputs.configured == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.tags.outputs.backend }}
       - name: Build and publish frontend image
         uses: docker/build-push-action@v6
         with:
           context: Frontend/todo
-          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          push: ${{ steps.aws-config.outputs.configured == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
           build-args: REACT_APP_API_BASE_URL=/api/todos
           tags: ${{ steps.tags.outputs.frontend }}
 
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.build-images.outputs.aws-configured == 'true'
     needs: build-images
     runs-on: ubuntu-latest
     permissions:

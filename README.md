@@ -100,7 +100,7 @@ Backend settings are read from environment variables; there are no production cr
 
 ## CI/CD and AWS
 
-`.github/workflows/ci-cd.yml` tests the backend and builds the frontend on pushes and pull requests. It builds both Docker images on every trigger, publishes SHA-tagged images to Amazon ECR on pushes to `main`, and deploys that immutable SHA to EC2 through AWS Systems Manager. The deployment waits for both container health checks and attempts to restore the previous images if the new deployment fails.
+`.github/workflows/ci-cd.yml` tests the backend and builds the frontend on pushes and pull requests. It builds both Docker images on every trigger, publishes SHA-tagged images to Amazon ECR on pushes to `main` when the required AWS settings are present, and deploys that immutable SHA to EC2 through AWS Systems Manager. The deployment waits for both container health checks and attempts to restore the previous images if the new deployment fails. If AWS settings are missing, the workflow still validates both image builds and reports that publishing/deployment were skipped; it does not pretend that a cloud deployment happened.
 
 Before enabling deployment, create the AWS resources and GitHub repository variables/secrets described in [aws/aws-setup.md](aws/aws-setup.md). The workflow assumes GitHub Actions OIDC, an EC2 instance with an SSM/ECR/Secrets Manager IAM role, two ECR repositories, and an application JSON secret in Secrets Manager. CI only runs a deployment when those resources are provisioned. No AWS deployment was performed while preparing this repository.
 
