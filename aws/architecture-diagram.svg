@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="650" viewBox="0 0 1100 650" role="img" aria-labelledby="title desc">
+  <title id="title">Todo Summary Assistant AWS architecture</title>
+  <desc id="desc">GitHub Actions publishes images to ECR and deploys them with Systems Manager to EC2. EC2 connects privately to RDS. Prometheus and Grafana monitor the app and host.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+    <style>
+      text { font-family: sans-serif; fill: #0f172a; }
+      .box { rx: 12; stroke-width: 2; }
+      .aws { fill: #f8fafc; stroke: #64748b; stroke-dasharray: 8 5; }
+      .app { fill: #dbeafe; stroke: #2563eb; }
+      .data { fill: #dcfce7; stroke: #16a34a; }
+      .ops { fill: #fef3c7; stroke: #d97706; }
+      .ci { fill: #f3e8ff; stroke: #9333ea; }
+      .arrow { stroke: #334155; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+      .label { font-size: 15px; }
+      .title { font-size: 20px; font-weight: bold; }
+      .subtitle { font-size: 14px; fill: #475569; }
+    </style>
+  </defs>
+  <rect x="25" y="25" width="1050" height="595" class="box aws"/>
+  <text x="50" y="60" class="title">AWS account / VPC</text>
+
+  <rect x="70" y="105" width="220" height="105" class="box ci"/>
+  <text x="180" y="143" text-anchor="middle" class="title">GitHub Actions</text>
+  <text x="180" y="171" text-anchor="middle" class="subtitle">OIDC • test • build • deploy</text>
+
+  <rect x="405" y="105" width="230" height="105" class="box ci"/>
+  <text x="520" y="143" text-anchor="middle" class="title">Amazon ECR</text>
+  <text x="520" y="171" text-anchor="middle" class="subtitle">Immutable SHA-tagged images</text>
+
+  <rect x="355" y="275" width="420" height="255" class="box app"/>
+  <text x="565" y="310" text-anchor="middle" class="title">EC2 • private app subnet</text>
+  <text x="565" y="335" text-anchor="middle" class="subtitle">Instance role • Systems Manager</text>
+  <rect x="385" y="365" width="165" height="105" class="box app"/>
+  <text x="467" y="402" text-anchor="middle" class="title">Nginx / React</text>
+  <text x="467" y="430" text-anchor="middle" class="subtitle">Port 80 • /api proxy</text>
+  <rect x="580" y="365" width="165" height="105" class="box app"/>
+  <text x="662" y="402" text-anchor="middle" class="title">Spring Boot</text>
+  <text x="662" y="430" text-anchor="middle" class="subtitle">Private container network</text>
+
+  <rect x="830" y="335" width="200" height="135" class="box data"/>
+  <text x="930" y="380" text-anchor="middle" class="title">Amazon RDS</text>
+  <text x="930" y="408" text-anchor="middle" class="subtitle">MySQL • private only</text>
+  <text x="930" y="435" text-anchor="middle" class="subtitle">Backups • Multi-AZ option</text>
+
+  <rect x="385" y="555" width="360" height="48" class="box ops"/>
+  <text x="565" y="585" text-anchor="middle" class="label">Prometheus + Grafana • Node Exporter • cAdvisor</text>
+
+  <rect x="70" y="335" width="220" height="95" class="box"/>
+  <text x="180" y="372" text-anchor="middle" class="title">Users</text>
+  <text x="180" y="400" text-anchor="middle" class="subtitle">HTTPS via ALB / TLS proxy</text>
+
+  <rect x="830" y="125" width="200" height="100" class="box ops"/>
+  <text x="930" y="165" text-anchor="middle" class="title">Secrets Manager</text>
+  <text x="930" y="193" text-anchor="middle" class="subtitle">DB + optional integrations</text>
+
+  <path d="M290 155 L400 155" class="arrow"/>
+  <text x="345" y="143" text-anchor="middle" class="subtitle">push images</text>
+  <path d="M290 185 C330 250 340 285 410 350" class="arrow"/>
+  <text x="310" y="270" class="subtitle">SSM deploy</text>
+  <path d="M520 210 L520 270" class="arrow"/>
+  <text x="530" y="247" class="subtitle">pull</text>
+  <path d="M290 380 L380 400" class="arrow"/>
+  <path d="M550 418 L575 418" class="arrow"/>
+  <path d="M745 418 L825 418" class="arrow"/>
+  <text x="785" y="407" text-anchor="middle" class="subtitle">3306 from app SG</text>
+  <path d="M830 210 C790 265 750 285 700 360" class="arrow"/>
+  <text x="780" y="275" class="subtitle">EC2 role reads secret</text>
+  <path d="M565 530 L565 550" class="arrow"/>
+</svg>

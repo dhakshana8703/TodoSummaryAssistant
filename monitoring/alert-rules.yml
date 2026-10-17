@@ -1,0 +1,48 @@
+groups:
+  - name: todo-assistant
+    rules:
+      - alert: TodoBackendDown
+        expr: up{job="todo-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Todo backend is unreachable
+          description: Prometheus has failed to scrape the backend for at least two minutes.
+
+      - alert: TodoBackendHighServerErrorRate
+        expr: |
+          (
+            sum(rate(http_server_requests_seconds_count{job="todo-backend",status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_server_requests_seconds_count{job="todo-backend"}[5m])), 0.1)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Todo backend server error rate is above 5%
+          description: More than 5% of backend requests have returned 5xx responses for five minutes.
+
+      - alert: HostCpuUsageHigh
+        expr: 100 * (1 - avg by(instance) (rate(node_cpu_seconds_total{job="node-exporter",mode="idle"}[5m]))) > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Host CPU usage is above 90%
+          description: Investigate sustained CPU pressure on the application host.
+
+      - alert: HostDiskSpaceLow
+        expr: |
+          100 * (
+            node_filesystem_avail_bytes{job="node-exporter",mountpoint="/",fstype!~"rootfs|tmpfs"}
+            /
+            node_filesystem_size_bytes{job="node-exporter",mountpoint="/",fstype!~"rootfs|tmpfs"}
+          ) < 10
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Host root filesystem has less than 10% free space
+          description: Free disk space before logs or container writes fill the host.

@@ -1,0 +1,164 @@
+name: CI/CD
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: Backend/todo-summary-assistant/pom.xml
+      - name: Test backend
+        working-directory: Backend/todo-summary-assistant
+        run: mvn --batch-mode --no-transfer-progress test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: Frontend/todo/package-lock.json
+      - name: Build frontend
+        working-directory: Frontend/todo
+        run: |
+          npm ci
+          npm run build
+
+  build-images:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image-base: ${{ steps.image.outputs.base }}
+      backend-tags: ${{ steps.tags.outputs.backend }}
+      frontend-tags: ${{ steps.tags.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set image name
+        id: image
+        env:
+          ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        run: |
+          registry="${ECR_REGISTRY:-local}"
+          repository="${ECR_REPOSITORY:-todo-summary-assistant}"
+          echo "base=${registry}/${repository}" >> "$GITHUB_OUTPUT"
+      - name: Set image tags
+        id: tags
+        env:
+          IMAGE_BASE: ${{ steps.image.outputs.base }}
+        run: |
+          backend="${IMAGE_BASE}-backend:${GITHUB_SHA}"
+          frontend="${IMAGE_BASE}-frontend:${GITHUB_SHA}"
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            backend="${backend}"$'\n'"${IMAGE_BASE}-backend:latest"
+            frontend="${frontend}"$'\n'"${IMAGE_BASE}-frontend:latest"
+          fi
+          {
+            echo "backend<<EOF"
+            printf '%s\n' "$backend"
+            echo "EOF"
+            echo "frontend<<EOF"
+            printf '%s\n' "$frontend"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+      - name: Build and publish backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: Backend/todo-summary-assistant
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.tags.outputs.backend }}
+      - name: Build and publish frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: Frontend/todo
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          build-args: REACT_APP_API_BASE_URL=/api/todos
+          tags: ${{ steps.tags.outputs.frontend }}
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build-images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Deploy through Systems Manager and verify health
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          IMAGE_PREFIX: ${{ needs.build-images.outputs.image-base }}
+          IMAGE_TAG: ${{ github.sha }}
+          EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          APP_SECRET_ARN: ${{ secrets.APP_SECRET_ARN }}
+        run: |
+          set -euo pipefail
+          remote_command="$(
+            printf 'AWS_REGION=%q IMAGE_PREFIX=%q IMAGE_TAG=%q APP_SECRET_ARN=%q bash -s <<'\\''TODO_DEPLOY'\\''\n' \
+              "$AWS_REGION" "$IMAGE_PREFIX" "$IMAGE_TAG" "$APP_SECRET_ARN"
+            cat aws/deploy.sh
+            printf '\nTODO_DEPLOY\n'
+          )"
+          parameters="$(jq -cn --arg command "$remote_command" '{commands: [$command]}')"
+          command_id="$(aws ssm send-command \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "Deploy Todo Summary Assistant ${IMAGE_TAG}" \
+            --parameters "$parameters" \
+            --query 'Command.CommandId' \
+            --output text)"
+
+          for attempt in $(seq 1 60); do
+            status="$(aws ssm get-command-invocation \
+              --command-id "$command_id" \
+              --instance-id "$EC2_INSTANCE_ID" \
+              --query 'Status' \
+              --output text 2>/dev/null || true)"
+            case "$status" in
+              Success)
+                echo "Deployment and container health checks succeeded."
+                exit 0
+                ;;
+              Failed|Cancelled|TimedOut|Cancelling)
+                aws ssm get-command-invocation \
+                  --command-id "$command_id" \
+                  --instance-id "$EC2_INSTANCE_ID" \
+                  --query 'StandardErrorContent' \
+                  --output text
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          echo "Timed out waiting for the SSM deployment command."
+          exit 1

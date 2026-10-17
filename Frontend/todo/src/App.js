@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import TodoForm from './components/TodoForm';
 import TodoList from './components/TodoList';
 import Notification from './components/Notification';
@@ -10,19 +10,25 @@ function App() {
   const [editingTodo, setEditingTodo] = useState(null);
   const [notification, setNotification] = useState({ message: '', type: '' });
 
-  useEffect(() => {
-    fetchTodos();
+  const showNotification = useCallback((message, type) => {
+    setNotification({ message, type });
+    setTimeout(() => {
+      setNotification({ message: '', type: '' });
+    }, 5000);
   }, []);
 
-  const fetchTodos = async () => {
-    try {
-      const response = await todoService.getAllTodos();
-      setTodos(response.data);
-    } catch (error) {
-      console.error('Error fetching todos:', error);
-      showNotification('Error fetching todos.', 'error');
-    }
-  };
+  useEffect(() => {
+    const fetchTodos = async () => {
+      try {
+        const response = await todoService.getAllTodos();
+        setTodos(response.data);
+      } catch (error) {
+        console.error('Error fetching todos:', error);
+        showNotification('Error fetching todos.', 'error');
+      }
+    };
+    fetchTodos();
+  }, [showNotification]);
 
   const addTodo = async (todo) => {
     try {
@@ -80,13 +86,6 @@ function App() {
       console.error('Error summarizing and sending to Slack:', error);
       showNotification('Failed to summarize and send to Slack.', 'error');
     }
-  };
-
-  const showNotification = (message, type) => {
-    setNotification({ message, type });
-    setTimeout(() => {
-      setNotification({ message: '', type: '' });
-    }, 5000); // Hide after 5 seconds
   };
 
   return (
